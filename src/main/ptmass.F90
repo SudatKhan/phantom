@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------!
 ! The Phantom Smoothed Particle Hydrodynamics code, by Daniel Price et al. !
-! Copyright (c) 2007-2021 The Authors (see AUTHORS)                        !
+! Copyright (c) 2007-2022 The Authors (see AUTHORS)                        !
 ! See LICENCE file for usage and distribution conditions                   !
 ! http://phantomsph.bitbucket.io/                                          !
 !--------------------------------------------------------------------------!
@@ -32,11 +32,10 @@ module ptmass
 !   - r_merge_uncond  : *sinks will unconditionally merge within this separation*
 !   - rho_crit_cgs    : *density above which sink particles are created (g/cm^3)*
 !
-! :Dependencies: boundary, dim, domain, eos, externalforces, fastmath,
-!   infile_utils, io, io_summary, kdtree, kernel, linklist, mpiutils,
-!   options, part, units
+! :Dependencies: boundary, dim, eos, eos_piecewise, externalforces,
+!   fastmath, infile_utils, io, io_summary, kdtree, kernel, linklist,
+!   mpidomain, mpiutils, options, part, units
 !
- use dim,  only:maxptmass
  use part, only:nsinkproperties,gravity,is_accretable
  use io,   only:iscfile,iskfile,id,master
  implicit none
@@ -52,6 +51,7 @@ module ptmass
  public :: write_options_ptmass, read_options_ptmass
  public :: update_ptmass
  public :: calculate_mdot
+ public :: ptmass_calc_enclosed_mass
 #ifdef PERIODIC
  public :: ptmass_boundary_crossing
 #endif
@@ -125,9 +125,9 @@ subroutine get_accel_sink_gas(nptmass,xi,yi,zi,hi,xyzmh_ptmass,fxi,fyi,fzi,phi, 
  integer,           intent(in)    :: nptmass
  real,              intent(in)    :: xi,yi,zi,hi
  real,              intent(inout) :: fxi,fyi,fzi,phi
- real,              intent(in)    :: xyzmh_ptmass(nsinkproperties,maxptmass)
+ real,              intent(in)    :: xyzmh_ptmass(nsinkproperties,nptmass)
  real,    optional, intent(in)    :: pmassi
- real,    optional, intent(inout) :: fxyz_ptmass(4,maxptmass)
+ real,    optional, intent(inout) :: fxyz_ptmass(4,nptmass)
  real,    optional, intent(out)   :: fonrmax,dtphi2
  real                             :: ftmpxi,ftmpyi,ftmpzi
  real                             :: dx,dy,dz,rr2,ddr,dr3,f1,f2,pmassj
@@ -244,8 +244,8 @@ subroutine get_accel_sink_sink(nptmass,xyzmh_ptmass,fxyz_ptmass,phitot,dtsinksin
  use externalforces, only:externalforce
  use kernel,         only:kernel_softening,radkern
  integer, intent(in)  :: nptmass
- real,    intent(in)  :: xyzmh_ptmass(nsinkproperties,maxptmass)
- real,    intent(out) :: fxyz_ptmass(4,maxptmass)
+ real,    intent(in)  :: xyzmh_ptmass(nsinkproperties,nptmass)
+ real,    intent(out) :: fxyz_ptmass(4,nptmass)
  real,    intent(out) :: phitot,dtsinksink
  integer, intent(in)  :: iexternalforce
  real,    intent(in)  :: ti
@@ -422,7 +422,7 @@ end subroutine get_accel_sink_sink
 #ifdef PERIODIC
 subroutine ptmass_boundary_crossing(nptmass,xyzmh_ptmass)
  use boundary, only:cross_boundary
- use domain,   only:isperiodic
+ use mpidomain,only:isperiodic
  integer, intent(in)    :: nptmass
  real,    intent(inout) :: xyzmh_ptmass(:,:)
  integer                :: i,ncross
@@ -443,9 +443,9 @@ end subroutine ptmass_boundary_crossing
 subroutine ptmass_predictor(nptmass,dt,xyzmh_ptmass,vxyz_ptmass,fxyz_ptmass)
  integer, intent(in)    :: nptmass
  real,    intent(in)    :: dt
- real,    intent(inout) :: xyzmh_ptmass(nsinkproperties,maxptmass)
- real,    intent(inout) :: vxyz_ptmass(3,maxptmass)
- real,    intent(in)    :: fxyz_ptmass(4,maxptmass)
+ real,    intent(inout) :: xyzmh_ptmass(nsinkproperties,nptmass)
+ real,    intent(inout) :: vxyz_ptmass(3,nptmass)
+ real,    intent(in)    :: fxyz_ptmass(4,nptmass)
  real    :: vxhalfi,vyhalfi,vzhalfi
  integer :: i
 
@@ -479,8 +479,8 @@ subroutine ptmass_corrector(nptmass,dt,vxyz_ptmass,fxyz_ptmass,xyzmh_ptmass,iext
  use externalforces, only:update_vdependent_extforce_leapfrog,is_velocity_dependent
  integer, intent(in)    :: nptmass
  real,    intent(in)    :: dt
- real,    intent(inout) :: vxyz_ptmass(3,maxptmass)
- real,    intent(in)    :: fxyz_ptmass(4,maxptmass), xyzmh_ptmass(nsinkproperties,maxptmass)
+ real,    intent(inout) :: vxyz_ptmass(3,nptmass)
+ real,    intent(in)    :: fxyz_ptmass(4,nptmass), xyzmh_ptmass(nsinkproperties,nptmass)
  integer, intent(in)    :: iexternalforce
  real :: vxhalfi,vyhalfi,vzhalfi
  real :: fxi,fyi,fzi,fextv(3)
@@ -608,8 +608,8 @@ subroutine ptmass_accrete(is,nptmass,xi,yi,zi,hi,vxi,vyi,vzi,fxi,fyi,fzi, &
  integer,           intent(in)    :: is,nptmass,itypei
  real,              intent(in)    :: xi,yi,zi,pmassi,vxi,vyi,vzi,fxi,fyi,fzi,time,facc
  real,              intent(inout) :: hi
- real,              intent(in)    :: xyzmh_ptmass(nsinkproperties,maxptmass)
- real,              intent(in)    :: vxyz_ptmass(3,maxptmass)
+ real,              intent(in)    :: xyzmh_ptmass(nsinkproperties,nptmass)
+ real,              intent(in)    :: vxyz_ptmass(3,nptmass)
  logical,           intent(out)   :: accreted
  real,              intent(inout) :: dptmass(:,:)
  integer(kind=1),   intent(in)    :: nbinmax
@@ -847,8 +847,8 @@ end subroutine update_ptmass
 subroutine ptmass_create(nptmass,npart,itest,xyzh,vxyzu,fxyzu,fext,divcurlv,poten,&
                          massoftype,xyzmh_ptmass,vxyz_ptmass,fxyz_ptmass,time)
  use part,   only:ihacc,ihsoft,igas,iamtype,get_partinfo,iphase,iactive,maxphase,rhoh, &
-                  ispinx,ispiny,ispinz,fxyz_ptmass_sinksink
- use dim,    only:maxp,maxneigh,maxvxyzu
+                  ispinx,ispiny,ispinz,fxyz_ptmass_sinksink,eos_vars,igasP
+ use dim,    only:maxp,maxneigh,maxvxyzu,maxptmass
  use kdtree, only:getneigh
  use kernel, only:kernel_softening,radkern
  use io,     only:id,iprint,fatal,iverbose,nprocs
@@ -859,7 +859,8 @@ subroutine ptmass_create(nptmass,npart,itest,xyzh,vxyzu,fxyzu,fext,divcurlv,pote
  use part,     only:ibin,ibin_wake
 #endif
  use linklist, only:getneigh_pos,ifirstincell,listneigh=>listneigh_global
- use eos,      only:equationofstate,gamma,gamma_pwp,utherm
+ use eos,           only:gamma,utherm
+ use eos_piecewise, only:gamma_pwp
  use options,  only:ieos
  use units,    only:unit_density
  use io_summary, only:summary_variable_rhomax,summary_ptmass_fail, &
@@ -869,10 +870,10 @@ subroutine ptmass_create(nptmass,npart,itest,xyzh,vxyzu,fxyzu,fext,divcurlv,pote
  integer,         intent(inout) :: nptmass
  integer,         intent(in)    :: npart,itest
  real,            intent(inout) :: xyzh(:,:)
- real,            intent(in)    :: vxyzu(:,:), fxyzu(:,:), fext(:,:), massoftype(:)
+ real,            intent(in)    :: vxyzu(:,:),fxyzu(:,:),fext(:,:),massoftype(:)
  real(4),         intent(in)    :: divcurlv(:,:),poten(:)
- real,            intent(inout) :: xyzmh_ptmass(nsinkproperties,maxptmass)
- real,            intent(inout) :: vxyz_ptmass(3,maxptmass),fxyz_ptmass(4,maxptmass)
+ real,            intent(inout) :: xyzmh_ptmass(:,:)
+ real,            intent(inout) :: vxyz_ptmass(:,:),fxyz_ptmass(:,:)
  real,            intent(in)    :: time
  integer(kind=1)    :: iphasei,ibin_wakei
  integer            :: nneigh
@@ -889,7 +890,7 @@ subroutine ptmass_create(nptmass,npart,itest,xyzh,vxyzu,fxyzu,fext,divcurlv,pote
  real    :: alpha_grav,alphabeta_grav,radxy2,radxz2,radyz2
  real    :: etot,epot,ekin,etherm,erot,erotx,eroty,erotz
  real    :: rcrossvx,rcrossvy,rcrossvz,fxj,fyj,fzj
- real    :: pmassi,pmassj,pmassk,ponrhoj,rhoj,spsoundj
+ real    :: pmassi,pmassj,pmassk,rhoj
  real    :: q2i,qi,psofti,psoftj,psoftk,fsoft,epot_mass,epot_rad,pmassgas1
  real    :: hcheck,hcheck2,f_acc_local
  real(4) :: divvi,potenj_min,poteni
@@ -1020,7 +1021,7 @@ subroutine ptmass_create(nptmass,npart,itest,xyzh,vxyzu,fxyzu,fext,divcurlv,pote
 !$omp parallel default(none) &
 !$omp shared(nprocs) &
 !$omp shared(maxp,maxphase) &
-!$omp shared(nneigh,listneigh,xyzh,xyzcache,vxyzu,massoftype,iphase,pmassgas1,calc_exact_epot,hcheck2) &
+!$omp shared(nneigh,listneigh,xyzh,xyzcache,vxyzu,massoftype,iphase,pmassgas1,calc_exact_epot,hcheck2,eos_vars) &
 !$omp shared(itest,id,id_rhomax,ifail,xi,yi,zi,hi,vxi,vyi,vzi,hi1,hi21,itype,pmassi,ieos,gamma,poten) &
 #ifdef PERIODIC
 !$omp shared(dxbound,dybound,dzbound) &
@@ -1030,7 +1031,7 @@ subroutine ptmass_create(nptmass,npart,itest,xyzh,vxyzu,fxyzu,fext,divcurlv,pote
 #endif
 !$omp private(n,j,xj,yj,zj,hj1,hj21,psoftj,rij2,nk,k,xk,yk,zk,hk1,psoftk,rjk2,psofti,rik2) &
 !$omp private(dx,dy,dz,dvx,dvy,dvz,dv2,isgasj,isdustj) &
-!$omp private(rhoj,ponrhoj,spsoundj,q2i,qi,fsoft,rcrossvx,rcrossvy,rcrossvz,radxy2,radyz2,radxz2) &
+!$omp private(rhoj,q2i,qi,fsoft,rcrossvx,rcrossvy,rcrossvz,radxy2,radyz2,radxz2) &
 !$omp firstprivate(pmassj,pmassk,itypej,iactivej,itypek) &
 !$omp reduction(+:ekin,erotx,eroty,erotz,etherm,epot,epot_mass,epot_rad) &
 !$omp reduction(min:potenj_min)
@@ -1103,13 +1104,12 @@ subroutine ptmass_create(nptmass,npart,itest,xyzh,vxyzu,fxyzu,fext,divcurlv,pote
           if (maxvxyzu >= 4) then
              etherm = etherm + pmassj*utherm(vxyzu(4,j),rhoj)
           else
-             call equationofstate(ieos,ponrhoj,spsoundj,rhoj,xj,yj,zj)
              if (ieos==2 .and. gamma > 1.001) then
-                etherm = etherm + pmassj*ponrhoj/(gamma - 1.)
+                etherm = etherm + pmassj*(eos_vars(igasP,j)/rhoj)/(gamma - 1.)
              elseif (ieos==9) then
-                etherm = etherm + pmassj*ponrhoj/(gamma_pwp(rhoj) - 1.)
+                etherm = etherm + pmassj*(eos_vars(igasP,j)/rhoj)/(gamma_pwp(rhoj) - 1.)
              else
-                etherm = etherm + pmassj*1.5*ponrhoj
+                etherm = etherm + pmassj*1.5*(eos_vars(igasP,j)/rhoj)
              endif
           endif
        endif
@@ -1406,13 +1406,13 @@ end subroutine ptmass_create
 !  negative mass.
 !+
 !-----------------------------------------------------------------------
-subroutine merge_sinks(time,nptmass,xyzmh_ptmass,vxyz_ptmass,fxyz_ptmass,merge_ij,merge_n)
+subroutine merge_sinks(time,nptmass,xyzmh_ptmass,vxyz_ptmass,fxyz_ptmass,merge_ij)
  use io,    only:iprint,warning,iverbose,id,master
  use part,  only:ispinx,ispiny,ispinz,imacc
  real,    intent(in)    :: time
- integer, intent(in)    :: nptmass,merge_n,merge_ij(nptmass)
- real,    intent(inout) :: xyzmh_ptmass(nsinkproperties,maxptmass)
- real,    intent(inout) :: vxyz_ptmass(3,maxptmass),fxyz_ptmass(4,maxptmass)
+ integer, intent(in)    :: nptmass,merge_ij(nptmass)
+ real,    intent(inout) :: xyzmh_ptmass(nsinkproperties,nptmass)
+ real,    intent(inout) :: vxyz_ptmass(3,nptmass),fxyz_ptmass(4,nptmass)
  integer :: i,j
  real    :: rr2,xi,yi,zi,mi,vxi,vyi,vzi,xj,yj,zj,mj,vxj,vyj,vzj,Epot,Ekin
  real    :: mij,mij1
@@ -1475,13 +1475,13 @@ subroutine merge_sinks(time,nptmass,xyzmh_ptmass,vxyz_ptmass,fxyz_ptmass,merge_i
              ! Kill sink j by setting negative mass
              xyzmh_ptmass(4,j)      = -abs(mj)
              ! print success
-             write(iprint,"(/,3a,I8,a,I8,a,F10.4)") 'merge_sinks: ',typ,' merged sinks ',i,' & ',j,' at time = ',time
+             write(iprint,"(/,1x,3a,I8,a,I8,a,F10.4)") 'merge_sinks: ',typ,' merged sinks ',i,' & ',j,' at time = ',time
           elseif (id==master .and. iverbose>=1) then
-             write(iprint,"(/, a,I8,a,I8,a,F10.4)") &
+             write(iprint,"(/,1x,a,I8,a,I8,a,F10.4)") &
              'merge_sinks: failed to conditionally merge sinks ',i,' & ',j,' at time = ',time
           endif
        elseif (xyzmh_ptmass(4,j) > 0. .and. id==master .and. iverbose>=1) then
-          write(iprint,"(/,a,I8,a,I8,a,F10.4)") &
+          write(iprint,"(/,1x,a,I8,a,I8,a,F10.4)") &
           'merge_sinks: There is a mismatch in sink indicies and relative proximity for ',i,' & ',j,' at time = ',time
        endif
     endif
@@ -1677,6 +1677,32 @@ subroutine calculate_mdot(nptmass,time,xyzmh_ptmass)
     endif
  enddo
 end subroutine calculate_mdot
+
+!-----------------------------------------------------------------------
+!+
+!  calculate mass enclosed in sink softening radius
+!+
+!-----------------------------------------------------------------------
+subroutine ptmass_calc_enclosed_mass(nptmass,npart,xyzh)
+ use part,   only:imassenc,ihsoft,massoftype,igas,xyzmh_ptmass
+ use kernel, only:radkern2
+ integer, intent(in) :: nptmass,npart
+ real,    intent(in) :: xyzh(:,:)
+ integer             :: i,j,ncount
+ real                :: drj2
+
+ do i = 1,nptmass
+    ncount = 0
+    do j = 1,npart
+       drj2 = (xyzh(1,j)-xyzmh_ptmass(1,i))**2 + (xyzh(2,j)-xyzmh_ptmass(2,i))**2 + (xyzh(3,j)-xyzmh_ptmass(3,i))**2
+       if (drj2 < radkern2*xyzmh_ptmass(ihsoft,i)**2) then
+          ncount = ncount + 1
+       endif
+    enddo
+    xyzmh_ptmass(imassenc,i) = ncount * massoftype(igas)
+ enddo
+
+end subroutine ptmass_calc_enclosed_mass
 
 !-----------------------------------------------------------------------
 !+
