@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------!
 ! The Phantom Smoothed Particle Hydrodynamics code, by Daniel Price et al. !
-! Copyright (c) 2007-2022 The Authors (see AUTHORS)                        !
+! Copyright (c) 2007-2023 The Authors (see AUTHORS)                        !
 ! See LICENCE file for usage and distribution conditions                   !
 ! http://phantomsph.bitbucket.io/                                          !
 !--------------------------------------------------------------------------!
@@ -141,7 +141,6 @@ subroutine binary_force(xi,yi,zi,ti,fxi,fyi,fzi,phi)
  phi2 = -(1.-binarymassri)*dr2
  phi  = phi1 + phi2
 
- return
 end subroutine binary_force
 
 !----------------------------------------------
@@ -175,7 +174,6 @@ subroutine binary_posvel(ti,posmh,vels)
  vels(5) = -binarymassri*cos(ti)
  vels(6) = 0.
 
- return
 end subroutine binary_posvel
 
 !----------------------------------------------

@@ -1,6 +1,6 @@
 !--------------------------------------------------------------------------!
 ! The Phantom Smoothed Particle Hydrodynamics code, by Daniel Price et al. !
-! Copyright (c) 2007-2022 The Authors (see AUTHORS)                        !
+! Copyright (c) 2007-2023 The Authors (see AUTHORS)                        !
 ! See LICENCE file for usage and distribution conditions                   !
 ! http://phantomsph.bitbucket.io/                                          !
 !--------------------------------------------------------------------------!
@@ -17,7 +17,7 @@ program phantomsetup
 ! :Dependencies: boundary, checksetup, dim, eos, fileutils, gravwaveutils,
 !   io, krome_interface, memory, mpidomain, mpiutils, options, part,
 !   physcon, readwrite_dumps, readwrite_infile, setBfield, setup,
-!   setup_params, systemutils, units
+!   setup_params, systemutils, timestep, units
 !
  use memory,          only:allocate_memory,deallocate_memory
  use dim,             only:tagline,maxp,maxvxyzu,mpi,&
@@ -34,6 +34,7 @@ program phantomsetup
  use setup,           only:setpart
  use setup_params,    only:ihavesetupB,npart_total
  use checksetup,      only:check_setup
+ use timestep,        only:time
  use physcon,         only:pi
  use units,           only:set_units,print_units,c_is_unity
  use mpiutils,        only:init_mpi,finalise_mpi,reduceall_mpi
@@ -42,9 +43,6 @@ program phantomsetup
  use fileutils,       only:strip_extension
  use gravwaveutils,   only:calc_gravitwaves
  use systemutils,     only:get_command_option
-#ifdef LIGHTCURVE
- use part,            only:luminosity,maxlum,lightcurve
-#endif
 #ifdef KROME
  use krome_interface, only:write_KromeSetupFile
 #endif
@@ -54,9 +52,10 @@ program phantomsetup
  integer, parameter          :: lenprefix = 120
  character(len=lenprefix)    :: fileprefix
  character(len=lenprefix+10) :: dumpfile,infile,evfile,logfile
- real                        :: time,pmassi
+ real                        :: pmassi
  logical                     :: iexist
 
+ nprocs = 1    ! for MPI, this is not initialised until init_mpi, but an initialised value is required for init_part
  call set_io_unit_numbers
  call set_units
  call set_boundary
@@ -80,9 +79,6 @@ program phantomsetup
     print*,'Error: File prefix should not contain _0000'
     print*,'       (these are assigned automatically)'
     print "(/,a)",' e.g. "phantomsetup mysim"'
-    stop
- elseif (fileprefix=='test') then
-    print*,'Error: cannot use ''test'' as the job name, please rename your .setup file'
     stop
  endif
  infile = trim(fileprefix)//'.in'
@@ -118,9 +114,9 @@ program phantomsetup
     call init_domains(nprocs)
     nprocsfake = 1
  else ! non-mpi
-    nprocsfake = get_command_option('nprocsfake',default=1)
+    nprocsfake = int(get_command_option('nprocsfake',default=1))
     nprocs= nprocsfake
-    print*,' nprocs = ',nprocs
+    if (nprocs > 1) print*,' nprocs = ',nprocs
     call init_domains(nprocs)
     id = 0
  endif
@@ -151,7 +147,7 @@ program phantomsetup
        pmassi = massoftype(igas)
        do i=1,npart
           if (maxphase==maxp) pmassi = massoftype(iamtype(iphase(i)))
-          vxyzu(maxvxyzu,i) = en_from_utherm(vxyzu(maxvxyzu,i),rhoh(xyzh(4,i),pmassi))
+          vxyzu(maxvxyzu,i) = en_from_utherm(vxyzu(:,i),rhoh(xyzh(4,i),pmassi),gamma)
        enddo
     endif
 
